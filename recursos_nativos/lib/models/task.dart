@@ -39,7 +39,6 @@ class Task {
         
         photoPaths = photoPaths ?? [];
 
-  // Getters auxiliares compatíveis com a versão antiga
   bool get hasPhoto => photoPaths.isNotEmpty;
   String? get photoPath => photoPaths.isNotEmpty ? photoPaths.first : null;
   bool get wasCompletedByShake => completedBy == 'shake';
@@ -54,7 +53,7 @@ class Task {
       'completed': completed ? 1 : 0,
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt?.toIso8601String(),
-      'photoPaths': jsonEncode(photoPaths), // salva como JSON
+      'photoPaths': jsonEncode(photoPaths), 
       'completedAt': completedAt?.toIso8601String(),
       'completedBy': completedBy,
       'latitude': latitude,
@@ -69,7 +68,6 @@ class Task {
       try {
         paths = List<String>.from(jsonDecode(map['photoPaths'] as String));
       } catch (_) {
-        // fallback caso não seja JSON
         paths = (map['photoPaths'] as String).split(',');
       }
     }
