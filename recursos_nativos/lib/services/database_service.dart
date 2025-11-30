@@ -174,11 +174,9 @@ class DatabaseService {
         'createdAt': DateTime.now().toIso8601String(),
       });
     }
-
     return await db.delete('tasks', where: 'id = ?', whereArgs: [id]);
   }
 
-  // Sync queue utilities
   Future<List<Map<String, dynamic>>> getPendingSync() async {
     final db = await instance.database;
     return await db.query('sync_queue', orderBy: 'createdAt ASC');

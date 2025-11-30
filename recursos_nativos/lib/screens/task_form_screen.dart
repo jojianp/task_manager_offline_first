@@ -4,6 +4,7 @@ import '../models/task.dart';
 import '../services/database_service.dart';
 import '../services/camera_service.dart';
 import '../services/location_service.dart';
+import '../services/sync_service.dart';
 import '../widgets/location_picker.dart';
 
 class TaskFormScreen extends StatefulWidget {
@@ -129,6 +130,9 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
           locationName: _locationName,
         );
         await DatabaseService.instance.create(newTask);
+        try {
+          SyncService.instance.processPending();
+        } catch (_) {}
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('✓ Tarefa criada'), backgroundColor: Colors.green),
@@ -146,6 +150,9 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
           locationName: _locationName,
         );
         await DatabaseService.instance.update(updatedTask);
+        try {
+          SyncService.instance.processPending();
+        } catch (_) {}
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('✓ Tarefa atualizada'), backgroundColor: Colors.blue),

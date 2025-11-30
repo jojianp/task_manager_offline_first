@@ -47,9 +47,13 @@ class SyncService {
     await _pullServerChangesToLocal();
     await _processQueue();
   }
+  
+  void processPending({bool force = false}) {
+    if (!force && !ConnectivityService.instance.isOnline.value) return;
+    _processQueue();
+  }
 
   Future<void> _pullServerChangesToLocal() async {
-    // Simulation mode: iterate simulated server store and upsert server entries
     if (serverBaseUrl == null) {
       int count = 0;
       for (final entry in _simulatedServerStore.entries) {
@@ -60,11 +64,15 @@ class SyncService {
               ? DateTime.parse(serverObj['updatedAt'] as String)
               : DateTime.parse(serverObj['createdAt'] as String);
           if (local == null) {
+            debugPrint('Sync pull: inserting server task ${entry.key} (serverUpdated=$serverUpdated)');
             await DatabaseService.instance.upsertTaskFromServer(serverObj);
           } else {
             final localUpdated = local.updatedAt ?? local.createdAt;
             if (serverUpdated.isAfter(localUpdated)) {
+              debugPrint('Sync pull: server wins for id=${entry.key} (serverUpdated=$serverUpdated > localUpdated=$localUpdated). Overwriting local.');
               await DatabaseService.instance.upsertTaskFromServer(serverObj);
+            } else {
+              debugPrint('Sync pull: local wins for id=${entry.key} (localUpdated=$localUpdated >= serverUpdated=$serverUpdated). Keeping local.');
             }
           }
         } catch (e) {
@@ -125,10 +133,12 @@ class SyncService {
                     : DateTime.parse(payloadMap['createdAt'] as String);
 
                 if (serverObj != null && serverUpdated != null && serverUpdated.isAfter(localUpdated)) {
+                  debugPrint('Sync push: server wins for id=$taskId (serverUpdated=$serverUpdated > localUpdated=$localUpdated). Applying server and removing queue.');
                   await DatabaseService.instance.upsertTaskFromServer(serverObj);
                   await db.delete('sync_queue', where: 'id = ?', whereArgs: [rowId]);
                   continue;
                 } else {
+                  debugPrint('Sync push: local wins for id=$taskId (localUpdated=$localUpdated >= serverUpdated=$serverUpdated). Updating simulated server and removing queue.');
                   final newServerObj = Map<String, dynamic>.from(payloadMap);
                   _simulatedServerStore[taskId] = newServerObj;
                   await db.delete('sync_queue', where: 'id = ?', whereArgs: [rowId]);
@@ -155,7 +165,8 @@ class SyncService {
               if (res.statusCode >= 200 && res.statusCode < 300) {
                 try {
                   final serverObj = jsonDecode(res.body) as Map<String, dynamic>;
-                  await DatabaseService.instance.upsertTaskFromServer(serverObj);
+                debugPrint('Sync push (server-backed): create succeeded for server id=${serverObj['id']}');
+                await DatabaseService.instance.upsertTaskFromServer(serverObj);
                 } catch (_) {}
                 await db.delete('sync_queue', where: 'id = ?', whereArgs: [rowId]);
               } else {
@@ -176,6 +187,7 @@ class SyncService {
                     : DateTime.parse(payloadMap['createdAt'] as String);
 
                 if (serverUpdated.isAfter(localUpdated)) {
+                  debugPrint('Sync push (server-backed): server wins for id=$taskId (serverUpdated=$serverUpdated > localUpdated=$localUpdated). Applying server.');
                   await DatabaseService.instance.upsertTaskFromServer(serverObj);
                   await db.delete('sync_queue', where: 'id = ?', whereArgs: [rowId]);
                 } else {

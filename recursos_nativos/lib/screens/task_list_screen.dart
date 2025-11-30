@@ -124,6 +124,9 @@ class _TaskListScreenState extends State<TaskListScreen> {
       );
 
       await DatabaseService.instance.update(updated);
+      try {
+        SyncService.instance.processPending();
+      } catch (_) {}
       
       // Verificar se o widget ainda está montado antes de usar context
       if (!mounted) return;
@@ -280,6 +283,9 @@ class _TaskListScreenState extends State<TaskListScreen> {
         }
         
         await DatabaseService.instance.delete(task.id!);
+        try {
+          SyncService.instance.processPending();
+        } catch (_) {}
         await _loadTasks();
 
         if (mounted) {
@@ -536,7 +542,11 @@ class _TaskListScreenState extends State<TaskListScreen> {
             ),
           );
           if (result == true && mounted) {
-            _loadTasks();
+            try {
+              SyncService.instance.processPending();
+            } catch (_) {}
+            await Future.delayed(const Duration(milliseconds: 300));
+            if (mounted) _loadTasks();
           }
         },
         backgroundColor: Colors.blue,
