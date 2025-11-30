@@ -7,6 +7,7 @@ class TaskCard extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onDelete;
   final Function(bool?) onCheckboxChanged;
+  final bool isPending;
 
   const TaskCard({
     super.key,
@@ -14,6 +15,7 @@ class TaskCard extends StatelessWidget {
     required this.onTap,
     required this.onDelete,
     required this.onCheckboxChanged,
+    this.isPending = false,
   });
 
   Color _getPriorityColor() {
@@ -287,11 +289,25 @@ class TaskCard extends StatelessWidget {
                     ),
                   ),
 
-                  IconButton(
-                    onPressed: onDelete,
-                    icon: const Icon(Icons.delete_outline),
-                    color: Colors.red,
-                    tooltip: 'Deletar',
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (isPending)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 4.0),
+                          child: Icon(
+                            Icons.cloud_off,
+                            color: Colors.orangeAccent,
+                            size: 18,
+                          ),
+                        ),
+                      IconButton(
+                        onPressed: onDelete,
+                        icon: const Icon(Icons.delete_outline),
+                        color: Colors.red,
+                        tooltip: 'Deletar',
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -313,8 +329,8 @@ class TaskCard extends StatelessWidget {
                         borderRadius: const BorderRadius.vertical(
                           bottom: Radius.circular(12),
                         ),
-                        child: Image.file(
-                          File(task.photoPaths[index]),
+                        child: Image(
+                          image: ResizeImage(FileImage(File(task.photoPaths[index])), width: 400),
                           width: 200,
                           height: 180,
                           fit: BoxFit.cover,

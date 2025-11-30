@@ -2,24 +2,27 @@ import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'services/camera_service.dart';
+import 'services/connectivity_service.dart';
+import 'services/sync_service.dart';
 import 'screens/task_list_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // ✅ Inicializa o FFI (obrigatório para desktop)
   if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;
     debugPrint('💾 sqflite_common_ffi inicializado para ${Platform.operatingSystem}.');
   }
 
-  // 📷 Inicializa a câmera apenas em plataformas móveis
   if (Platform.isAndroid || Platform.isIOS) {
     await CameraService.instance.initialize();
   } else {
     debugPrint('Câmera não suportada nesta plataforma (${Platform.operatingSystem}).');
   }
+
+  ConnectivityService.instance; 
+  SyncService.instance; 
 
   runApp(const MyApp());
 }

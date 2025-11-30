@@ -23,7 +23,7 @@ class DatabaseService {
 
     return await openDatabase(
       path,
-      version: 5, // VERSÃO FINAL COM MÚLTIPLAS FOTOS
+      version: 6, 
       onCreate: _createDB,
       onUpgrade: _onUpgrade,
     );
@@ -42,6 +42,7 @@ class DatabaseService {
         priority $textType,
         completed $intType,
         createdAt $textType,
+        updatedAt TEXT,
         photoPath TEXT,
         photoPaths TEXT,
         completedAt TEXT,
@@ -51,50 +52,79 @@ class DatabaseService {
         locationName TEXT
       )
     ''');
+
+    await db.execute('''
+      CREATE TABLE sync_queue (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        action TEXT NOT NULL, -- create, update, delete
+        payload TEXT NOT NULL, -- JSON payload
+        createdAt TEXT NOT NULL
+      )
+    ''');
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
-    // Migração incremental para cada versão
     if (oldVersion < 2) {
       await db.execute('ALTER TABLE tasks ADD COLUMN photoPath TEXT');
     }
+
     if (oldVersion < 3) {
       await db.execute('ALTER TABLE tasks ADD COLUMN completedAt TEXT');
       await db.execute('ALTER TABLE tasks ADD COLUMN completedBy TEXT');
     }
+
     if (oldVersion < 4) {
       await db.execute('ALTER TABLE tasks ADD COLUMN latitude REAL');
       await db.execute('ALTER TABLE tasks ADD COLUMN longitude REAL');
       await db.execute('ALTER TABLE tasks ADD COLUMN locationName TEXT');
     }
+
     if (oldVersion < 5) {
-      // Primeiro, adiciona a nova coluna
       await db.execute('ALTER TABLE tasks ADD COLUMN photoPaths TEXT');
 
-      // Depois, migra os dados antigos
       final List<Map<String, dynamic>> tasks = await db.query('tasks');
       for (final task in tasks) {
         if (task['photoPath'] != null) {
           await db.update(
             'tasks',
-            {'photoPaths': '[${json.encode(task['photoPath'])}]'},
+            {'photoPaths': jsonEncode([task['photoPath']])},
             where: 'id = ?',
             whereArgs: [task['id']],
           );
         }
       }
 
-      // Por fim, remove a coluna antiga (SQLite não suporta DROP COLUMN, então deixamos ela)
       debugPrint('✅ Dados de fotos migrados com sucesso!');
     }
-    debugPrint('✅ Banco migrado de v$oldVersion para v$newVersion');
+
+    if (oldVersion < 6) {
+      await db.execute('ALTER TABLE tasks ADD COLUMN updatedAt TEXT');
+
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS sync_queue (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          action TEXT NOT NULL,
+          payload TEXT NOT NULL,
+          createdAt TEXT NOT NULL
+        )
+      ''');
+    }
+
+    debugPrint('Banco migrado de v$oldVersion para v$newVersion');
   }
 
   // CRUD Methods
   Future<Task> create(Task task) async {
     final db = await instance.database;
-    final id = await db.insert('tasks', task.toMap());
-    return task.copyWith(id: id);
+    final now = DateTime.now();
+    final withUpdated = task.copyWith(updatedAt: now);
+    final id = await db.insert('tasks', withUpdated.toMap());
+    await db.insert('sync_queue', {
+      'action': 'create',
+      'payload': jsonEncode(withUpdated.copyWith(id: id).toMap()),
+      'createdAt': DateTime.now().toIso8601String(),
+    });
+    return withUpdated.copyWith(id: id);
   }
 
   Future<Task?> read(int id) async {
@@ -116,20 +146,83 @@ class DatabaseService {
 
   Future<int> update(Task task) async {
     final db = await instance.database;
-    return db.update(
+    // set updatedAt
+    final updated = task.copyWith(updatedAt: DateTime.now());
+    final rows = await db.update(
       'tasks',
-      task.toMap(),
+      updated.toMap(),
       where: 'id = ?',
       whereArgs: [task.id],
     );
+    // enqueue sync
+    await db.insert('sync_queue', {
+      'action': 'update',
+      'payload': jsonEncode(updated.toMap()),
+      'createdAt': DateTime.now().toIso8601String(),
+    });
+    return rows;
   }
 
   Future<int> delete(int id) async {
     final db = await instance.database;
+    // enqueue delete
+    final toDelete = await read(id);
+    if (toDelete != null) {
+      await db.insert('sync_queue', {
+        'action': 'delete',
+        'payload': jsonEncode(toDelete.toMap()),
+        'createdAt': DateTime.now().toIso8601String(),
+      });
+    }
+
     return await db.delete('tasks', where: 'id = ?', whereArgs: [id]);
   }
 
-  // Método especial: buscar tarefas por proximidade
+  // Sync queue utilities
+  Future<List<Map<String, dynamic>>> getPendingSync() async {
+    final db = await instance.database;
+    return await db.query('sync_queue', orderBy: 'createdAt ASC');
+  }
+
+  Future<void> removeSyncEntry(int queueId) async {
+    final db = await instance.database;
+    await db.delete('sync_queue', where: 'id = ?', whereArgs: [queueId]);
+  }
+
+  Future<Task?> getTaskById(int id) async {
+    return await read(id);
+  }
+
+  Future<void> upsertTaskFromServer(Map<String, dynamic> serverMap) async {
+    final db = await instance.database;
+    final serverTask = Task.fromMap(serverMap);
+
+    final local = await read(serverTask.id!);
+    if (local == null) {
+      // insert
+      await db.insert('tasks', serverTask.toMap());
+      return;
+    }
+
+    final localUpdated = local.updatedAt ?? local.createdAt;
+    final serverUpdated = serverTask.updatedAt ?? serverTask.createdAt;
+    if (serverUpdated.isAfter(localUpdated)) {
+      await db.update('tasks', serverTask.toMap(), where: 'id = ?', whereArgs: [serverTask.id]);
+    }
+  }
+
+  Future<bool> isTaskPending(int taskId) async {
+    final db = await instance.database;
+    final rows = await db.query('sync_queue');
+    for (final r in rows) {
+      try {
+        final Map<String, dynamic> payload = jsonDecode(r['payload'] as String);
+        if (payload['id'] == taskId) return true;
+      } catch (_) {}
+    }
+    return false;
+  }
+
   Future<List<Task>> getTasksNearLocation({
     required double latitude,
     required double longitude,
@@ -140,7 +233,6 @@ class DatabaseService {
     return allTasks.where((task) {
       if (task.latitude == null || task.longitude == null) return false;
 
-      // Cálculo de distância usando fórmula de Haversine (simplificada)
       final latDiff = (task.latitude! - latitude).abs();
       final lonDiff = (task.longitude! - longitude).abs();
       final distance = ((latDiff * 111000) + (lonDiff * 111000)) / 2;

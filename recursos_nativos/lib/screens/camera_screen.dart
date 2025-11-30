@@ -25,6 +25,16 @@ class _CameraScreenState extends State<CameraScreen> {
     }
   }
 
+  @override
+  void dispose() {
+    try {
+      widget.controller.dispose();
+    } catch (e) {
+      // ignore dispose errors
+    }
+    super.dispose();
+  }
+
   Future<void> _takePicture() async {
     if (_isCapturing || !widget.controller.value.isInitialized) return;
 
@@ -58,12 +68,21 @@ class _CameraScreenState extends State<CameraScreen> {
       );
     }
 
+    Widget preview;
+    try {
+      preview = CameraPreview(widget.controller);
+    } catch (e) {
+      preview = const Center(
+        child: Text('Câmera indisponível', style: TextStyle(color: Colors.white)),
+      );
+    }
+
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
         fit: StackFit.expand,
         children: [
-          Center(child: CameraPreview(widget.controller)),
+          Center(child: preview),
 
           Positioned(
             left: 0,
@@ -76,7 +95,7 @@ class _CameraScreenState extends State<CameraScreen> {
                   begin: Alignment.bottomCenter,
                   end: Alignment.topCenter,
                   colors: [
-                    Color(0xFF000000).withValues(alpha: 0.8),
+                    Colors.black.withOpacity(0.8),
                     Colors.transparent,
                   ],
                 ),

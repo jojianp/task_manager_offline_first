@@ -1,11 +1,14 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../models/task.dart';
 import '../services/database_service.dart';
 import '../services/sensor_service.dart';
 import '../services/location_service.dart';
+import '../services/connectivity_service.dart';
 import '../screens/task_form_screen.dart';
 import '../widgets/task_card.dart';
 import '../services/camera_service.dart';
+import '../services/sync_service.dart';
 
 class TaskListScreen extends StatefulWidget {
   const TaskListScreen({super.key});
@@ -18,21 +21,30 @@ class _TaskListScreenState extends State<TaskListScreen> {
   List<Task> _tasks = [];
   String _filter = 'all';
   bool _isLoading = true;
+  Set<int> _pendingTaskIds = {};
+  VoidCallback? _syncListener;
 
   @override
   void initState() {
     super.initState();
     _loadTasks();
-    _setupShakeDetection(); // INICIAR SHAKE
+    _setupShakeDetection();
+    _syncListener = () {
+
+      if (!SyncService.instance.isSyncing.value) {
+        _loadTasks();
+      }
+    };
+    SyncService.instance.isSyncing.addListener(_syncListener!);
   }
 
   @override
   void dispose() {
-    SensorService.instance.stop(); // PARAR SHAKE
+    SensorService.instance.stop(); 
+    if (_syncListener != null) SyncService.instance.isSyncing.removeListener(_syncListener!);
     super.dispose();
   }
 
-  // SHAKE DETECTION
   void _setupShakeDetection() {
     SensorService.instance.startShakeDetection(() {
       _showShakeDialog();
@@ -148,10 +160,19 @@ class _TaskListScreenState extends State<TaskListScreen> {
 
     try {
       final tasks = await DatabaseService.instance.readAll();
+      final pending = await DatabaseService.instance.getPendingSync();
+      final Set<int> pendingIds = {};
+      for (final p in pending) {
+        try {
+          final Map<String, dynamic> payload = jsonDecode(p['payload'] as String);
+          if (payload['id'] is int) pendingIds.add(payload['id'] as int);
+        } catch (_) {}
+      }
       
       if (mounted) {
         setState(() {
           _tasks = tasks;
+          _pendingTaskIds = pendingIds;
           _isLoading = false;
         });
       }
@@ -315,6 +336,16 @@ class _TaskListScreenState extends State<TaskListScreen> {
         backgroundColor: Colors.blue,
         foregroundColor: Colors.white,
         actions: [
+          ValueListenableBuilder<bool>(
+            valueListenable: ConnectivityService.instance.isOnline,
+            builder: (context, online, _) => Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8.0),
+              child: Icon(
+                online ? Icons.cloud_done : Icons.cloud_off,
+                color: online ? Colors.greenAccent : Colors.orangeAccent,
+              ),
+            ),
+          ),
           PopupMenuButton<String>(
             icon: const Icon(Icons.filter_list),
             onSelected: (value) {
@@ -402,6 +433,11 @@ class _TaskListScreenState extends State<TaskListScreen> {
               );
             },
           ),
+          IconButton(
+            icon: const Icon(Icons.sync_problem),
+            tooltip: 'Demo LWW',
+            onPressed: () => _showLwwDemoMenu(),
+          ),
         ],
       ),
       body: RefreshIndicator(
@@ -470,6 +506,7 @@ class _TaskListScreenState extends State<TaskListScreen> {
                               final task = filteredTasks[index];
                               return TaskCard(
                                 task: task,
+                                isPending: _pendingTaskIds.contains(task.id),
                                 onTap: () async {
                                   final result = await Navigator.push(
                                     context,
@@ -508,6 +545,62 @@ class _TaskListScreenState extends State<TaskListScreen> {
         label: const Text('Nova Tarefa'),
       ),
     );
+  }
+
+  void _showLwwDemoMenu() {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.public),
+              title: const Text('Simular edição no servidor (server wins)'),
+              onTap: () {
+                Navigator.pop(context);
+                _simulateServerEdit();
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _simulateServerEdit() async {
+    final tasks = await DatabaseService.instance.readAll();
+    if (tasks.isEmpty) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Nenhuma tarefa para simular')));
+      return;
+    }
+
+    final chosen = await showDialog<Task?>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Escolha tarefa para edição no servidor'),
+        children: tasks
+            .map((t) => SimpleDialogOption(
+                  child: Text(t.title),
+                  onPressed: () => Navigator.pop(context, t),
+                ))
+            .toList(),
+      ),
+    );
+
+    if (chosen == null) return;
+    
+    Map<String, dynamic>? baseServer = SyncService.instance.getSimulatedServerEntry(chosen.id!);
+
+    final serverMap = (baseServer != null
+            ? Map<String, dynamic>.from(baseServer)
+            : chosen.toMap())
+        ..['title'] = '${chosen.title} (editado no servidor)'
+        ..['updatedAt'] = DateTime.now().toUtc().toIso8601String();
+
+    SyncService.instance.simulateServerEdit(serverMap);
+
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Edição do servidor simulada (será aplicada quando online)')));
   }
 
   Widget _buildEmptyState() {

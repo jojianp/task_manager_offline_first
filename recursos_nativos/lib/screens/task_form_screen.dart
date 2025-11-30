@@ -201,16 +201,22 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
                           builder: (_) => Scaffold(
                             backgroundColor: Colors.black,
                             appBar: AppBar(backgroundColor: Colors.transparent, elevation: 0),
-                            body: Center(child: InteractiveViewer(child: Image.file(File(path)))),
+                            body: Center(
+                              child: InteractiveViewer(
+                                child: Image(
+                                  image: ResizeImage(FileImage(File(path)), width: 1200),
+                                ),
+                              ),
+                            ),
                           ),
                         ));
                       },
-                      child: Container(
+                        child: Container(
                         margin: const EdgeInsets.all(4),
                         width: 100,
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(8),
-                          image: DecorationImage(image: FileImage(File(path)), fit: BoxFit.cover),
+                          image: DecorationImage(image: ResizeImage(FileImage(File(path)), width: 400), fit: BoxFit.cover),
                         ),
                       ),
                     ),

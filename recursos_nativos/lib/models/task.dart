@@ -7,6 +7,7 @@ class Task {
   final String priority;
   final bool completed;
   final DateTime createdAt;
+  final DateTime? updatedAt;
 
   // Múltiplas fotos
   final List<String> photoPaths;
@@ -27,6 +28,7 @@ class Task {
     required this.priority,
     this.completed = false,
     DateTime? createdAt,
+    DateTime? updatedAt,
     List<String>? photoPaths,
     this.completedAt,
     this.completedBy,
@@ -34,6 +36,7 @@ class Task {
     this.longitude,
     this.locationName,
   })  : createdAt = createdAt ?? DateTime.now(),
+        updatedAt = updatedAt,
         photoPaths = photoPaths ?? [];
 
   // Getters auxiliares compatíveis com a versão antiga
@@ -50,6 +53,7 @@ class Task {
       'priority': priority,
       'completed': completed ? 1 : 0,
       'createdAt': createdAt.toIso8601String(),
+      'updatedAt': updatedAt?.toIso8601String(),
       'photoPaths': jsonEncode(photoPaths), // salva como JSON
       'completedAt': completedAt?.toIso8601String(),
       'completedBy': completedBy,
@@ -77,6 +81,7 @@ class Task {
       priority: map['priority'] as String,
       completed: (map['completed'] as int) == 1,
       createdAt: DateTime.parse(map['createdAt'] as String),
+      updatedAt: map['updatedAt'] != null ? DateTime.parse(map['updatedAt'] as String) : null,
       photoPaths: paths,
       completedAt: map['completedAt'] != null ? DateTime.parse(map['completedAt'] as String) : null,
       completedBy: map['completedBy'] as String?,
@@ -93,6 +98,7 @@ class Task {
     String? priority,
     bool? completed,
     DateTime? createdAt,
+    DateTime? updatedAt,
     List<String>? photoPaths,
     DateTime? completedAt,
     String? completedBy,
@@ -107,6 +113,7 @@ class Task {
       priority: priority ?? this.priority,
       completed: completed ?? this.completed,
       createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
       photoPaths: photoPaths ?? this.photoPaths,
       completedAt: completedAt ?? this.completedAt,
       completedBy: completedBy ?? this.completedBy,

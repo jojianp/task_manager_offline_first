@@ -1,11 +1,19 @@
 import 'dart:io';
 import 'package:camera/camera.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 
 import '../screens/camera_screen.dart';
+
+Future<String> _copyFileIsolate(Map<String, String> args) async {
+  final src = args['src']!;
+  final dest = args['dest']!;
+  final saved = await File(src).copy(dest);
+  return saved.path;
+}
 
 class CameraService {
   static final CameraService instance = CameraService._init();
@@ -60,10 +68,15 @@ class CameraService {
         enableAudio: false,
       );
 
+      bool transferred = false;
       try {
         await controller.initialize();
-        if (!context.mounted) return null;
+        if (!context.mounted) {
+          await controller.dispose();
+          return null;
+        }
 
+        transferred = true;
         final imagePath = await Navigator.push<String>(
           context,
           MaterialPageRoute(
@@ -85,10 +98,15 @@ class CameraService {
         }
         return null;
       } finally {
-        controller.dispose();
+        if (!transferred) {
+          try {
+            await controller.dispose();
+          } catch (e) {
+            // ignore dispose errors
+          }
+        }
       }
     } else {
-      // Desktop/Windows: escolher arquivo(s)
       final result = await FilePicker.platform.pickFiles(
         type: FileType.image,
         allowMultiple: multiple,
@@ -96,9 +114,19 @@ class CameraService {
 
       if (result != null && result.files.isNotEmpty) {
         List<String> savedPaths = [];
+        final appDir = await getApplicationDocumentsDirectory();
+        final imageDir = Directory(path.join(appDir.path, 'images'));
+        if (!await imageDir.exists()) await imageDir.create(recursive: true);
+
         for (var file in result.files) {
-          if (file.path != null) {
-            savedPaths.add(await savePictureFile(File(file.path!)));
+          if (file.path == null) continue;
+          final fileName = 'task_${DateTime.now().millisecondsSinceEpoch}${path.extension(file.path!)}';
+          final savePath = path.join(imageDir.path, fileName);
+          try {
+            final saved = await compute(_copyFileIsolate, {'src': file.path!, 'dest': savePath});
+            savedPaths.add(saved);
+          } catch (e) {
+            debugPrint('Erro ao copiar arquivo em isolate: $e');
           }
         }
         return savedPaths;
@@ -126,11 +154,17 @@ class CameraService {
           'task_${DateTime.now().millisecondsSinceEpoch}${path.extension(imageFile.path)}';
       final savePath = path.join(imageDir.path, fileName);
 
-      final savedImage = await imageFile.copy(savePath);
-      debugPrint('✅ Foto salva: ${savedImage.path}');
-      return savedImage.path;
+      try {
+        final savedPath = await compute(_copyFileIsolate, {'src': imageFile.path, 'dest': savePath});
+        debugPrint('Foto salva: $savedPath');
+        return savedPath;
+      } catch (e) {
+        final savedImage = await imageFile.copy(savePath);
+        debugPrint('Foto salva (sync fallback): ${savedImage.path}');
+        return savedImage.path;
+      }
     } catch (e) {
-      debugPrint('❌ Erro ao salvar foto: $e');
+      debugPrint('Erro ao salvar foto: $e');
       rethrow;
     }
   }
