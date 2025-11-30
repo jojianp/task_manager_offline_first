@@ -95,7 +95,7 @@ class _CameraScreenState extends State<CameraScreen> {
                   begin: Alignment.bottomCenter,
                   end: Alignment.topCenter,
                   colors: [
-                    Colors.black.withOpacity(0.8),
+                    Colors.black.withAlpha((0.8 * 255).toInt()),
                     Colors.transparent,
                   ],
                 ),

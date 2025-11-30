@@ -28,7 +28,7 @@ class Task {
     required this.priority,
     this.completed = false,
     DateTime? createdAt,
-    DateTime? updatedAt,
+    this.updatedAt,
     List<String>? photoPaths,
     this.completedAt,
     this.completedBy,
@@ -36,7 +36,7 @@ class Task {
     this.longitude,
     this.locationName,
   })  : createdAt = createdAt ?? DateTime.now(),
-        updatedAt = updatedAt,
+        
         photoPaths = photoPaths ?? [];
 
   // Getters auxiliares compatíveis com a versão antiga

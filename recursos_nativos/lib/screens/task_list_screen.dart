@@ -585,6 +585,8 @@ class _TaskListScreenState extends State<TaskListScreen> {
       return;
     }
 
+    if (!mounted) return;
+
     final chosen = await showDialog<Task?>(
       context: context,
       builder: (context) => SimpleDialog(
@@ -600,14 +602,29 @@ class _TaskListScreenState extends State<TaskListScreen> {
 
     if (chosen == null) return;
     
-    Map<String, dynamic>? baseServer = SyncService.instance.getSimulatedServerEntry(chosen.id!);
+    // Build a server-side representation that is NOT a concatenation of the
+    // local title. We generate a distinct server title so LWW behavior is
+    // visible and deterministic. Preserve other fields to avoid accidental
+    // data loss when server overwrites local on LWW.
+    final nowIso = DateTime.now().toUtc().toIso8601String();
+    final serverMap = {
+      'id': chosen.id,
+      'title': '(edit no server)',
+      'description': chosen.description,
+      'priority': chosen.priority,
+      'completed': chosen.completed ? 1 : 0,
+      'createdAt': chosen.createdAt.toIso8601String(),
+      'updatedAt': nowIso,
+      'photoPaths': jsonEncode(chosen.photoPaths),
+      'completedAt': chosen.completedAt?.toIso8601String(),
+      'completedBy': chosen.completedBy,
+      'latitude': chosen.latitude,
+      'longitude': chosen.longitude,
+      'locationName': chosen.locationName,
+    };
 
-    final serverMap = (baseServer != null
-            ? Map<String, dynamic>.from(baseServer)
-            : chosen.toMap())
-        ..['title'] = '${chosen.title} (editado no servidor)'
-        ..['updatedAt'] = DateTime.now().toUtc().toIso8601String();
-
+    // Store the simulated server edit; it will only be applied when the app
+    // goes online and the sync process runs LWW reconciliation.
     SyncService.instance.simulateServerEdit(serverMap);
 
     if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Edição do servidor simulada (será aplicada quando online)')));
