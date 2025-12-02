@@ -602,10 +602,6 @@ class _TaskListScreenState extends State<TaskListScreen> {
 
     if (chosen == null) return;
     
-    // Build a server-side representation that is NOT a concatenation of the
-    // local title. We generate a distinct server title so LWW behavior is
-    // visible and deterministic. Preserve other fields to avoid accidental
-    // data loss when server overwrites local on LWW.
     final nowIso = DateTime.now().toUtc().toIso8601String();
     final serverMap = {
       'id': chosen.id,
@@ -623,8 +619,6 @@ class _TaskListScreenState extends State<TaskListScreen> {
       'locationName': chosen.locationName,
     };
 
-    // Store the simulated server edit; it will only be applied when the app
-    // goes online and the sync process runs LWW reconciliation.
     SyncService.instance.simulateServerEdit(serverMap);
 
     if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Edição do servidor simulada (será aplicada quando online)')));
